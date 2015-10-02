@@ -17,7 +17,7 @@
 #include "CNN.h"
 
 ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(std::string properties,
-                                                       int ImageRow, int ImageCol,int n_labels, int train_samples, int test_samples, Matrices links):
+int ImageRow, int ImageCol,int n_labels, int train_samples, int test_samples, Matrices links):
 n_output_dim(n_labels), n_train_samples(train_samples),
 n_image_rows(ImageRow), n_image_cols(ImageCol), n_layers(int(properties.size())),
 n_test_samples(test_samples)
@@ -41,6 +41,7 @@ n_test_samples(test_samples)
     
     
     /* Convert the data matrix to vector of image vector */
+    
     LoadTrainImage();
     LoadTrainLabel();
     LoadTestImage();
@@ -84,8 +85,72 @@ n_test_samples(test_samples)
     
     double init_weight = sqrt(1./(1 + n_output_dim + n_MLP_input_dim));
     MLPWeightMatrix = MatrixXf::Random(n_output_dim, n_MLP_input_dim) * init_weight;
+    dMLPWeightMatrix = MatrixXf::Zero(n_output_dim, n_MLP_input_dim);
+    
     MLPBiasVector = VectorXf::Zero(n_output_dim);
+    dMLPBiasVector = VectorXf::Zero(n_output_dim);
+    
 }
+
+ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(std::string properties, int ImageRow, int ImageCol, int n_labels, Matrices links, Matrices train_image, Matrices test_image, MatrixXf train_label, MatrixXf test_label):
+n_layers(int(properties.size())), n_image_rows(ImageRow), n_image_cols(ImageCol), n_output_dim(n_labels)
+{
+    /*
+     *  Description:
+     *  Load the trained CNN
+     */
+    
+    /* Input the convolutional matrix size */
+    std::cout << "Please input your conv matrice' size" << std::endl;
+    for (int i = 0; i < n_layers; i++)
+    {
+        unsigned int conv;
+        std::cin >> conv;
+        m_convs.push_back(conv);
+    }
+    
+    std::cout << "Please input your units in each layer" << std::endl;
+    for (int i = 0; i < n_layers; i++)
+    {
+        unsigned int unit;
+        std::cin >> unit;
+        m_units.push_back(unit);
+    }
+    
+    n_train_samples = (int)train_image.size();
+    n_test_samples = (int)test_image.size();
+    
+    m_train_Images = train_image;
+    m_test_Images = test_image;
+    m_train_label = train_label;
+    m_test_label = test_label;
+    
+    /******************************************************************
+     Construct the structure of CNN
+     ******************************************************************/
+    
+    /* The first layer must be the input image(i.e. needn't set conv size) */
+    CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, 1, 1, 'c',
+                                   MatrixXf::Zero(1, 1));
+    m_CNNLayers.push_back(Layer);
+    for (int i = 1; i < n_layers; i++)
+    {
+        Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), m_convs[i], m_units[i], properties[i], links[i], Layer);
+        m_CNNLayers.push_back(Layer);
+    }
+    
+    /* The final layer of CNN has to be a completely linked perceptron */
+    long n_MLP_input_dim = m_CNNLayers[n_layers - 1]->m_Neuron_Value[0].cols() * m_CNNLayers[n_layers - 1]->m_Neuron_Value[0].rows() * m_CNNLayers[n_layers - 1]->n_units;
+    
+    double init_weight = sqrt(1./(1 + n_output_dim + n_MLP_input_dim));
+    MLPWeightMatrix = MatrixXf::Random(n_output_dim, n_MLP_input_dim) * init_weight;
+    dMLPWeightMatrix = MatrixXf::Zero(n_output_dim, n_MLP_input_dim);
+
+    MLPBiasVector = VectorXf::Zero(n_output_dim);
+    dMLPBiasVector = VectorXf::Zero(n_output_dim);
+
+}
+
 
 VectorXf ConvolutionalNeuronNetwork::FeedForward(MatrixXf inputImage)
 {
@@ -103,7 +168,7 @@ VectorXf ConvolutionalNeuronNetwork::FeedForward(MatrixXf inputImage)
     
     /* Put the image into the CNN */
     (*lit)->m_Neuron_Value[0] = inputImage;
-    for (lit++; lit < m_CNNLayers.end(); lit++)
+    for (lit++; lit != m_CNNLayers.end(); lit++)
     {
         (*lit)->Calculate();
     }
@@ -128,15 +193,17 @@ VectorXf ConvolutionalNeuronNetwork::FeedForward(MatrixXf inputImage)
         /* Link the unfolded vector in the last layer */
         MLP_input.segment(i * rows * cols, rows * cols) = matrix;
     }
+    
     VectorXf outputLabel = MLPWeightMatrix * MLP_input + MLPBiasVector;
     for (int i = 0; i < n_output_dim; i++)
     {
         outputLabel(i) = sigmoid(outputLabel(i));
     }
+    
     return outputLabel;
 }
 
-void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,                                              VectorXf desireOutput, double etaLearningRate)
+void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,                                              VectorXf desireOutput)
 {
     
     /*
@@ -145,18 +212,18 @@ void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,           
      *
      *  @param actualOutput: label predict by the feed forward
      *  @param desireOutput: corresponding label
-     *  @param etaLearningRate: learning rate of the last perceptron
      *
      */
     
     /* perceptron error */
-    VectorXf diff = desireOutput - actualOutput;
+    VectorXf diff = actualOutput - desireOutput;
     for (int i = 0; i < diff.size(); i++)
     {
         diff(i) *= DSIGMOID(actualOutput(i));
     }
-    MLPWeightMatrix += etaLearningRate * diff * MLP_input.transpose();
-    MLPBiasVector += etaLearningRate * diff;    /* Update weight and bias */
+
+    dMLPWeightMatrix += diff * MLP_input.transpose();
+    dMLPBiasVector += diff;    /* Update weight and bias */
 
     
     /******************************************************************
@@ -165,10 +232,12 @@ void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,           
     
     /* The last but one error(error of last CNN layer) */
     VectorXf diff_Xlast = MLPWeightMatrix.transpose() * diff;
+
     
     long rows = m_CNNLayers[n_layers - 1]->m_Neuron_Value[0].rows();
     long cols = m_CNNLayers[n_layers - 1]->m_Neuron_Value[0].cols();
     
+
     VectorLayers::iterator lit = m_CNNLayers.end() - 1;
 
     Matrices Err_dXlast;
@@ -180,14 +249,6 @@ void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,           
         MatrixXf err_decompressed = diff_Xlast.segment(i * cols * rows, cols * rows);
         err_decompressed.resize(rows, cols);
         Err_dXlast[i] = err_decompressed;
-//        Err_dXlast[i] = MatrixXf::Zero(rows, cols);
-//        for (int row = 0; row < rows; row++)
-//        {
-//            for (int col = 0; col < cols; col++)
-//            {
-//                Err_dXlast[i](row, col) = DSIGMOID(m_CNNLayers[n_layers - 1]->m_Neuron_Value[i](row, col)) * err_decompressed(row, col);
-//            }
-//        }
     }
     
     /******************************************************************
@@ -211,12 +272,356 @@ void ConvolutionalNeuronNetwork::BackPropagate(VectorXf actualOutput,           
     int ii = n_layers - 1;
     for (; lit > m_CNNLayers.begin(); lit--)
     {
-        (*lit)->BackPropagate(differentials[ii], differentials[ii - 1], DEFAULT_LEARNING_RATE);
+        (*lit)->BackPropagate(differentials[ii], differentials[ii - 1]);
         --ii;
     }
     
     differentials.clear();
 }
+
+void ConvolutionalNeuronNetwork::ApplyGradient(int batch_size, double etaLearningRate)
+{
+    /*
+     *  Description:
+     *  Apply the gradient into the convolutional network using batch average
+     *  
+     *  @param batch_size: The number of samples in each batch
+     *  @param etaLearningRate: The learning step length
+     *
+     */
+    
+    if (batch_size == 0)
+    {
+        return;
+    }
+    
+    for (int i = 1; i < n_layers; i++)
+    {
+        if (m_CNNLayers[i]->m_property == 'c')
+        {
+            long conv_matrix_row = m_CNNLayers[i]->l_conv;
+            long conv_matrix_col = m_CNNLayers[i]->l_conv;
+            long bias_matrix_row = m_CNNLayers[i]->m_Neuron_Value[0].rows();
+            long bias_matrix_col = m_CNNLayers[i]->m_Neuron_Value[0].cols();
+            
+            for (int j = 0; j < m_CNNLayers[i]->n_units; j++)
+            {
+                m_CNNLayers[i]->m_conv_weight[j] -= etaLearningRate * m_CNNLayers[i]->d_conv_weight[j] / batch_size;
+                
+                m_CNNLayers[i]->m_conv_bias[j] -= etaLearningRate * m_CNNLayers[i]->d_conv_bias[j] / batch_size;
+                
+                /* Clean the buffer */
+                m_CNNLayers[i]->d_conv_weight[j] = MatrixXf::Zero(conv_matrix_row, conv_matrix_col);
+                m_CNNLayers[i]->d_conv_bias[j] = MatrixXf::Zero(bias_matrix_row, bias_matrix_col);
+            }
+        }
+    }
+    
+    /* Update the parameters in fully connected network */
+    MLPWeightMatrix -= etaLearningRate * dMLPWeightMatrix / batch_size;
+    MLPBiasVector -= etaLearningRate * dMLPBiasVector / batch_size;
+    
+}
+
+void ConvolutionalNeuronNetwork::Train(int epoches, int batch_size, double etaLearningRate)
+{
+    /*
+     *  Description:
+     *  Train schedule with batch size fixed. The total iteration is known as epoches.
+     *
+     *  @param epoches: The number of iteration
+     *  @param batch_size: The fixed batch size
+     *  @param etaLearningRate: The length of learning step
+     *
+     */
+    
+    for (int ii = 1; ii <= epoches; ii++)
+    {
+        int iter = n_train_samples / batch_size;
+        int left_batch = n_train_samples % batch_size;
+     
+        std::cout << ii << "/" << epoches << " Epoch"<< std::endl;
+        
+        for (int i = 0; i < iter; i++)
+        {
+            for (int j = 0; j < batch_size; j++)
+            {
+                BackPropagate(FeedForward(m_train_Images[i * batch_size + j]), m_train_label.row(i * batch_size + j));
+            }
+            ApplyGradient(batch_size, etaLearningRate);
+            
+            /* Always remember clean the buffer after each batch */
+            CleanGradient();
+        }
+        
+        for (int i = 0; i < left_batch; i++)
+        {
+            BackPropagate(FeedForward(m_train_Images[epoches * batch_size + i]), m_train_label.row(iter * batch_size + i));
+        }
+        ApplyGradient(left_batch, etaLearningRate);
+        CleanGradient();
+    }
+
+    std::cout << "train over" << std::endl;
+}
+
+void ConvolutionalNeuronNetwork::CleanGradient()
+{
+    /*
+     *  Description:
+     *  The function to clean the buffer of the last batch
+     *
+     */
+    
+    for (int i = 1; i < n_layers; i++)
+    {
+        if (m_CNNLayers[i]->m_property == 'c')
+        {
+            for (int j = 0; j < m_CNNLayers[i]->n_units; j++)
+            {
+                m_CNNLayers[i]->d_conv_weight[j] = MatrixXf::Zero(m_CNNLayers[i]->l_conv, m_CNNLayers[i]->l_conv);
+                m_CNNLayers[i]->d_conv_bias[j] = MatrixXf::Zero(m_CNNLayers[i]->m_conv_bias[0].rows(), m_CNNLayers[i]->m_conv_bias[0].cols());
+            }
+        }
+    }
+    
+    dMLPBiasVector = VectorXf::Zero(dMLPBiasVector.size());
+    dMLPWeightMatrix = MatrixXf::Zero(dMLPWeightMatrix.rows(), dMLPWeightMatrix.cols());
+}
+
+
+    /******************************************************************
+     Start Upload and download module
+     ******************************************************************/
+
+
+void ConvolutionalNeuronNetwork::UploadTrainWeight(std::string dst)
+{
+    /*
+     *  Description:
+     *  Upload the train matrix to get it use
+     *
+     *  Writing rules:
+     *  First line --- group of conv matrix
+     *  First two lines of each group --- size of conv matrix(i.e. rows && cols, dim)
+     *  At last, MLP rows and cols and then MLP content
+     *
+     */
+    
+    std::ofstream fw(dst);
+    fw << m_convs.size() << '\n';
+    
+    auto lit = m_CNNLayers.begin() + 1;
+    for (int i = 1; i < m_convs.size(); i++)
+    {
+        if ((*lit)->m_property != 'c')
+        {
+            ++lit;
+            continue;
+        }
+        
+        fw << m_convs[i] << '\n';
+        for (int j = 0; j < (*lit)->n_units; j++)
+        {
+            fw << (*lit)->m_conv_weight[j];
+            fw << '\n';
+        }
+        lit++;
+    }
+    
+    fw << MLPWeightMatrix.rows() << '\n' << MLPWeightMatrix.cols() << '\n';
+    fw << MLPWeightMatrix;
+    
+    std::cout << "Successfully upload weight matrix" << std::endl;
+}
+
+void ConvolutionalNeuronNetwork::UploadTrainBias(std::string dst)
+{
+    /*
+     *  Description:
+     *  Upload the bias matrix
+     *  
+     *  Writing rules:
+     *  First line --- group of bias
+     *  First three line of each group --- bias matrix(rows, cols, dim)
+     *  At last, upload bias vector(first line of dim)
+     *
+     */
+    std::ofstream fw(dst);
+    fw << m_convs.size() << '\n';
+    
+    auto lit = m_CNNLayers.begin() + 1;
+    for (int i = 1; i < m_convs.size(); i++)
+    {
+        if ((*lit)->m_property != 'c')
+        {
+            lit++;
+            continue;
+        }
+
+        fw << (*lit)->m_conv_bias[0].rows() << '\n'
+            << (*lit)->m_conv_bias[0].cols() << '\n';
+        
+        for (int j = 0; j < (*lit)->n_units; j++)
+        {
+            fw << (*lit)->m_conv_bias[j];
+            fw << '\n';
+        }
+        lit++;
+    }
+    
+    fw << MLPBiasVector.size() << '\n';
+    fw << MLPBiasVector;
+    
+    std::cout << "Successfully upload bias matrice and vectors\n";
+}
+
+void ConvolutionalNeuronNetwork::DownloadTrainWeight(std::string src)
+{
+    /*
+     *  Description:
+     *  Download the trained weight matrix(the same content as shown above)
+     */
+    
+    std::ifstream fr(src);
+
+    std::string str;
+    getline(fr, str);
+    
+    /* Group size */
+    assert(stoi(str) == int(m_convs.size()));
+    
+    
+    /* Download the conv matrix with string splitted by space */
+    auto lit = m_CNNLayers.begin() + 1;
+    for (int i = 1; i < m_convs.size(); i++)
+    {
+        if ((*lit)->m_property != 'c')
+        {
+            lit++;
+            continue;
+        }
+
+        getline(fr, str);
+        assert((*lit)->l_conv == stoi(str));
+        for (int k = 0; k < (*lit)->n_units; k++)
+        {
+            for (int r = 0; r < (*lit)->l_conv; r++)
+            {
+                getline(fr, str);
+                int c = 0;
+                size_t firSpace = str.find_first_not_of(" ", 0);
+                size_t secSpace = str.find_first_of(" ", firSpace);
+                (*lit)->m_conv_weight[k](r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+                
+                while (c < (*lit)->l_conv)
+                {
+                    firSpace = str.find_first_not_of(" ", secSpace);
+                    secSpace = str.find_first_of(" ", firSpace);
+                    (*lit)->m_conv_weight[k](r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+                }
+            }
+        }
+        lit++;
+    }
+    
+    /* Download the MLP weight matrix */
+    getline(fr, str);
+    assert(stoi(str) == MLPWeightMatrix.rows());
+    getline(fr, str);
+    assert(stoi(str) == MLPWeightMatrix.cols());
+    for (int r = 0; r < MLPWeightMatrix.rows(); r++)
+    {
+        int c = 0;
+        getline(fr, str);
+        
+        size_t firSpace = str.find_first_not_of(" ", 0);
+        size_t secSpace = str.find_first_of(" ", firSpace);
+        MLPWeightMatrix(r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+        
+        while (firSpace < str.size() && c < MLPWeightMatrix.cols())
+        {
+            firSpace = str.find_first_not_of(" ", secSpace);
+            secSpace = str.find_first_of(" ", firSpace);
+            MLPWeightMatrix(r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+        }
+    }
+    
+    std::cout << "Successfully download weight matrix" << std::endl;
+}
+
+void ConvolutionalNeuronNetwork::DownloadTrainBias(std::string src)
+{
+    /*
+     *  Description:
+     *  Download the trained bias matrix(the same content as shown above)
+     */
+    
+    std::ifstream fr(src);
+    
+    std::string str;
+    getline(fr, str);
+    
+    /* Group size */
+    assert(stoi(str) == int(m_convs.size()));
+    
+    /* Download the bias matrix */
+    auto lit = m_CNNLayers.begin() + 1;
+    for (int i = 1; i < m_convs.size(); i++)
+    {
+        if ((*lit)->m_property != 'c')
+        {
+            lit++;
+            continue;
+        }
+        
+        getline(fr, str);
+        int bias_rows = stoi(str);
+        getline(fr, str);
+        int bias_cols = stoi(str);
+        
+        assert(bias_rows == (*lit)->m_conv_bias[0].rows());
+        assert(bias_cols == (*lit)->m_conv_bias[0].cols());
+        for (int k = 0; k < (*lit)->n_units; k++)
+        {
+            for (int r = 0; r < bias_rows; r++)
+            {
+                int c = 0;
+                getline(fr, str);
+
+                size_t firSpace = str.find_first_not_of(" ", 0);
+                size_t secSpace = str.find_first_of(" ", firSpace);
+                
+                (*lit)->m_conv_bias[k](r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+                
+                while (firSpace < str.size() && c < bias_cols)
+                {
+                    firSpace = str.find_first_not_of(" ", secSpace);
+                    secSpace = str.find_first_of(" ", firSpace);
+                    
+                    (*lit)->m_conv_bias[k](r, c++) = atof(str.substr(firSpace, secSpace - firSpace).c_str());
+                }
+            }
+        }
+        lit++;
+    }
+    
+    /* Download bias vector */
+    getline(fr, str);
+    assert(MLPBiasVector.size() == stoi(str));
+    for (int i = 0; i < MLPBiasVector.size(); i++)
+    {
+        getline(fr, str);
+        MLPBiasVector(i) = atof(str.c_str());
+    }
+    
+    std::cout << "Successfully download bias matrice and vectors\n";
+}
+
+    /******************************************************************
+     End Upload and download module
+     ******************************************************************/
+
 
 MatrixXf ConvolutionalNeuronNetwork::get_i_image(int index, std::string set)
 {
@@ -286,7 +691,7 @@ void ConvolutionalNeuronNetwork::LoadTrainImage()
      */
 
     MatrixXf m_train_compressed_images;
-    LoadMatrix(m_train_compressed_images, "./ORL/train_x", n_image_cols * n_image_rows, n_train_samples);
+    LoadMatrix(m_train_compressed_images, "/Users/liuyang/Desktop/Class/ML/DL/ANN/MNIST/train_x", n_image_cols * n_image_rows, n_train_samples);
     m_train_compressed_images /= 256.;
     
     m_train_Images.resize(n_train_samples);
@@ -308,7 +713,7 @@ void ConvolutionalNeuronNetwork::LoadTestImage()
      */
     
     MatrixXf m_test_compressed_images;
-    LoadMatrix(m_test_compressed_images, "./ORL/test_x", n_image_cols * n_image_rows, n_test_samples);
+    LoadMatrix(m_test_compressed_images, "/Users/liuyang/Desktop/Class/ML/DL/ANN/MNIST/test_x", n_image_cols * n_image_rows, n_test_samples);
     m_test_compressed_images /= 256.;
     
     m_test_Images.resize(n_test_samples);
@@ -329,7 +734,7 @@ void ConvolutionalNeuronNetwork::LoadTrainLabel()
      *  Load train label
      */
     
-    LoadMatrix(m_train_label, "./ORL/train_y", n_output_dim, n_train_samples);
+    LoadMatrix(m_train_label, "/Users/liuyang/Desktop/Class/ML/DL/ANN/MNIST/train_y", n_output_dim, n_train_samples);
 }
 
 void ConvolutionalNeuronNetwork::LoadTestLabel()
@@ -339,7 +744,7 @@ void ConvolutionalNeuronNetwork::LoadTestLabel()
      *  Load test label
      */
     
-    LoadMatrix(m_test_label, "./ORL/Desktop/test_y", n_output_dim, n_test_samples);
+    LoadMatrix(m_test_label, "/Users/liuyang/Desktop/Class/ML/DL/ANN/MNIST/test_y", n_output_dim, n_test_samples);
 }
 
 
@@ -380,13 +785,21 @@ l_conv(conv), m_property(category), n_units(units)
         
         m_conv_bias.resize(n_units);
         m_conv_weight.resize(n_units);
+        
+        d_conv_bias.resize(n_units);
+        d_conv_weight.resize(n_units);
+        
         double init_weight = sqrt(6./(1 + l_output_rows * l_output_cols + input_cols * input_rows));
         
         for (int i = 0; i < n_units; i++)
         {
             m_Neuron_Value[i] = MatrixXf::Zero(l_output_rows, l_output_cols);
+            
             m_conv_weight[i] = init_weight * MatrixXf::Random(l_conv, l_conv);
             m_conv_bias[i] = MatrixXf::Zero(l_output_rows, l_output_cols);
+            
+            d_conv_weight[i] = MatrixXf::Zero(l_conv, l_conv);
+            d_conv_bias[i] = MatrixXf::Zero(l_output_rows, l_output_cols);
         }
     }
     else if (category == 'p')   /* Initial the pool layer */
@@ -413,12 +826,16 @@ void CNNLayer::Calculate()
     /*
      *  Description:
      *  Feed forward in each CNN layer
+     *
      */
     
     if (m_property == 'c')      /* If current layer is convolutional */
     {
         for (int i = 0; i < n_units; i++)
         {
+            /* Clear the previous sample's result */
+            m_Neuron_Value[i] = MatrixXf::Zero(m_conv_bias[0].rows(), m_conv_bias[0].cols());
+            
             for (int j = 0; j < prev_CNN->n_units; j++)
             {
                 /* Find if i-th neuron linkage with the j-th neuron */
@@ -442,7 +859,7 @@ void CNNLayer::Calculate()
     }
 }
 
-void CNNLayer::BackPropagate(Matrices &Err_dXn, Matrices &Err_dXnm1, double etaLearningRate)
+void CNNLayer::BackPropagate(Matrices &Err_dXn, Matrices &Err_dXnm1)
 {
     /*
      *  Description:
@@ -450,14 +867,23 @@ void CNNLayer::BackPropagate(Matrices &Err_dXn, Matrices &Err_dXnm1, double etaL
      *  
      *  @param Err_dXn: the error of current layer(Known)
      *  @param Err_dXnm1: the error of previous layer(Unkown)
-     *  @param etaLearningRate: learning step
      *
      */
     
     if (m_property == 'c')
     {
+        
         for (int i = 0; i < n_units; i++)
         {
+            /* The convolutioanl layer have used sigmoid as activation */
+            for (int j = 0; j < Err_dXn[i].rows(); j++)
+            {
+                for (int k = 0; k < Err_dXn[i].cols(); k++)
+                {
+                    Err_dXn[i](j, k) *= DSIGMOID(m_Neuron_Value[i](j, k));
+                }
+            }
+
             MatrixXf err = Err_dXn[i];
             for (int j = 0; j < prev_CNN->n_units; j++)
             {
@@ -466,24 +892,16 @@ void CNNLayer::BackPropagate(Matrices &Err_dXn, Matrices &Err_dXnm1, double etaL
                 {
                     /* The formulation can be seen in .md file */
                     Err_dXnm1[j] += Convolution(err, Rot180(m_conv_weight[i]), 'f');
-                    m_conv_weight[i] += etaLearningRate * Convolution(prev_CNN->m_Neuron_Value[j], err, 'v');
+                    d_conv_weight[i] += Convolution(prev_CNN->m_Neuron_Value[j], err, 'v');
                 }
             }
-            m_conv_bias[i] += etaLearningRate * err;
+            d_conv_bias[i] += err;
         }
     }
     else if (m_property == 'p')
     {
         for (int i = 0; i < n_units; i++)
         {
-            /* The previous layer have used sigmoid as activation */
-            for (int j = 0; j < Err_dXn[i].rows(); j++)
-            {
-                for (int k = 0; k < Err_dXn[i].cols(); k++)
-                {
-                    Err_dXn[i](j, k) *= DSIGMOID(m_Neuron_Value[i](j, k));
-                }
-            }
             /* Average the errors into bigger matrice */
             DePool(Err_dXnm1[i], Err_dXn[i], DEFAULT_POOL);
         }
@@ -561,9 +979,10 @@ MatrixXf Rot180(MatrixXf input)
      *  Function of rotating the matrix by 180 degree
      */
     
-    return input.transpose().reverse();
+    MatrixXf rot90 = input.transpose().colwise().reverse();
+    return rot90.transpose().colwise().reverse();
+    
 }
-
 void DePool(MatrixXf& input, MatrixXf output, int pool_coeff)
 {
     /*
@@ -604,4 +1023,22 @@ double sigmoid(double input)
      */
     
     return 1./(1 + exp(-input));
+}
+
+int max_label_index(VectorXf label)
+{
+    /*
+     *  Description:
+     *  Return the index of the maximum element in the vector
+     */
+    
+    int index_max = 0;
+    for (int i = 1; i < label.size(); i++)
+    {
+        if (label(i) > label(index_max))
+        {
+            index_max = i;
+        }
+    }
+    return index_max;
 }
