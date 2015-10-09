@@ -10,6 +10,15 @@
 #define DEFAULT_LEARNING_RATE 1
 #define DSIGMOID(x) x * (1 - x)
 
+struct LayerAttribute
+{
+    unsigned int size_conv;
+    unsigned int neurons;
+    char LayerType;
+    MatrixXf linkage;
+};
+
+using LayerAttributes = std::vector<struct LayerAttribute>;
 
 class CNNLayer;
 using VectorLayers = std::vector<CNNLayer*>;
@@ -18,9 +27,11 @@ using Matrices = std::vector<MatrixXf>;
 class ConvolutionalNeuronNetwork
 {
 public:
-    ConvolutionalNeuronNetwork(std::string properties, int ImageRow, int ImageCol, int n_labels, int train_samples, int test_samples, Matrices links);
-    
-    ConvolutionalNeuronNetwork(std::string properties, int ImageRow, int ImageCol, int n_labels, Matrices links, Matrices train_image, Matrices test_image, MatrixXf train_label, MatrixXf test_label);
+    ConvolutionalNeuronNetwork(LayerAttributes attributes, int image_row,
+                               int image_col, int labels, int train_samples,
+                               int test_samples);
+    ConvolutionalNeuronNetwork(LayerAttributes attributes, int image_row, int image_col, int labels);
+    ConvolutionalNeuronNetwork(std::string properties, int ImageRow, int ImageCol, int n_labels, Matrices links);
     
     VectorXf FeedForward(MatrixXf inputImage);
     void BackPropagate(VectorXf actualOutput, VectorXf desireOutput);
@@ -37,9 +48,13 @@ public:
     VectorXf get_i_label(int index, std::string set);
     
     void LoadTrainImage();
+    void LoadTrainImage(Matrices train_image);
     void LoadTestImage();
+    void LoadTestImage(Matrices test_image);
     void LoadTrainLabel();
+    void LoadTrainLabel(MatrixXf train_label);
     void LoadTestLabel();
+    void LoadTestLabel(MatrixXf test_label);
     
     int get_image_rows() {  return n_image_rows;    }
     int get_image_cols() {  return n_image_cols;    }
@@ -53,11 +68,10 @@ private:
     const int n_image_cols;
     const int n_output_dim;
     
+    int n_conv_layer;
+    
     int n_train_samples;
     int n_test_samples;
-    
-    std::vector<unsigned int> m_convs;
-    std::vector<unsigned int> m_units;
     
     std::vector<MatrixXf> m_train_Images;
     std::vector<MatrixXf> m_test_Images;
@@ -67,10 +81,8 @@ private:
     
     MatrixXf MLPWeightMatrix;
     MatrixXf dMLPWeightMatrix;
-    
     VectorXf MLPBiasVector;
     VectorXf dMLPBiasVector;
-    
     VectorXf MLP_input;
 };
 

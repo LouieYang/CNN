@@ -16,29 +16,23 @@
 
 #include "CNN.h"
 
-ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(std::string properties,
-int ImageRow, int ImageCol,int n_labels, int train_samples, int test_samples, Matrices links):
-n_output_dim(n_labels), n_train_samples(train_samples),
-n_image_rows(ImageRow), n_image_cols(ImageCol), n_layers(int(properties.size())),
-n_test_samples(test_samples)
+ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(LayerAttributes attributes, int image_row, int image_col, int labels, int train_samples, int test_samples):
+n_layers(int(attributes.size())), n_image_rows(image_row), n_image_cols(image_col), n_output_dim(labels), n_train_samples(train_samples), n_test_samples(test_samples)
 {
     /*
      *  Description:
      *  A constructed function to initialize the CNN structure
      *
-     *  @param properties: The structure of conv layer and pool layer(e.g. "ccpcp")
+     *  @param attributes: The vector of struct LayerAttribute
      *
      *  @param ImageRow: train and test image height
      *  @param Imagecol: train and test image width
      *  @param n_labels: the output dimension(labels)
-     *  
+     *
      *  @param train_samples: number of train samples
      *  @param test_samples: number of test samples
      *
-     *  @param links: vector of matrix to represent the local linkage
-     *                  (If the layer is "pool", just an diagonal matrix)
      */
-    
     
     /* Convert the data matrix to vector of image vector */
     
@@ -47,36 +41,17 @@ n_test_samples(test_samples)
     LoadTestImage();
     LoadTestLabel();
     
-    /* Input the convolutional matrix size */
-    std::cout << "Please input your conv matrice' size" << std::endl;
-    for (int i = 0; i < n_layers; i++)
-    {
-        unsigned int conv;
-        std::cin >> conv;
-        m_convs.push_back(conv);
-    }
-    
-    std::cout << "Please input your units in each layer" << std::endl;
-    for (int i = 0; i < n_layers; i++)
-    {
-        unsigned int unit;
-        std::cin >> unit;
-        m_units.push_back(unit);
-    }
-    
-    
-    
     /******************************************************************
-        Construct the structure of CNN
-    ******************************************************************/
+     Construct the structure of CNN
+     ******************************************************************/
     
     /* The first layer must be the input image(i.e. needn't set conv size) */
-    CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, 1, 1, 'c',
-                                   MatrixXf::Zero(1, 1));
+    CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, attributes[0].size_conv, attributes[0].neurons, attributes[0].LayerType, attributes[0].linkage);
+    
     m_CNNLayers.push_back(Layer);
     for (int i = 1; i < n_layers; i++)
     {
-        Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), m_convs[i], m_units[i], properties[i], links[i], Layer);
+        Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), attributes[i].size_conv, attributes[i].neurons, attributes[i].LayerType, attributes[i].linkage, Layer);
         m_CNNLayers.push_back(Layer);
     }
     
@@ -90,52 +65,29 @@ n_test_samples(test_samples)
     MLPBiasVector = VectorXf::Zero(n_output_dim);
     dMLPBiasVector = VectorXf::Zero(n_output_dim);
     
+    Layer = nullptr;
+    delete Layer;
+
 }
 
-ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(std::string properties, int ImageRow, int ImageCol, int n_labels, Matrices links, Matrices train_image, Matrices test_image, MatrixXf train_label, MatrixXf test_label):
-n_layers(int(properties.size())), n_image_rows(ImageRow), n_image_cols(ImageCol), n_output_dim(n_labels)
+ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(LayerAttributes attributes, int image_row, int image_col, int labels): n_layers(int(attributes.size())), n_image_rows(image_row), n_image_cols(image_col), n_output_dim(labels)
 {
     /*
      *  Description:
      *  Load the trained CNN
      */
     
-    /* Input the convolutional matrix size */
-    std::cout << "Please input your conv matrice' size" << std::endl;
-    for (int i = 0; i < n_layers; i++)
-    {
-        unsigned int conv;
-        std::cin >> conv;
-        m_convs.push_back(conv);
-    }
-    
-    std::cout << "Please input your units in each layer" << std::endl;
-    for (int i = 0; i < n_layers; i++)
-    {
-        unsigned int unit;
-        std::cin >> unit;
-        m_units.push_back(unit);
-    }
-    
-    n_train_samples = (int)train_image.size();
-    n_test_samples = (int)test_image.size();
-    
-    m_train_Images = train_image;
-    m_test_Images = test_image;
-    m_train_label = train_label;
-    m_test_label = test_label;
-    
     /******************************************************************
      Construct the structure of CNN
      ******************************************************************/
     
     /* The first layer must be the input image(i.e. needn't set conv size) */
-    CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, 1, 1, 'c',
-                                   MatrixXf::Zero(1, 1));
+    CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, attributes[0].size_conv, attributes[0].neurons, attributes[0].LayerType, attributes[0].linkage);
+    
     m_CNNLayers.push_back(Layer);
     for (int i = 1; i < n_layers; i++)
     {
-        Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), m_convs[i], m_units[i], properties[i], links[i], Layer);
+        Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), attributes[i].size_conv, attributes[i].neurons, attributes[i].LayerType, attributes[i].linkage, Layer);
         m_CNNLayers.push_back(Layer);
     }
     
@@ -145,12 +97,13 @@ n_layers(int(properties.size())), n_image_rows(ImageRow), n_image_cols(ImageCol)
     double init_weight = sqrt(1./(1 + n_output_dim + n_MLP_input_dim));
     MLPWeightMatrix = MatrixXf::Random(n_output_dim, n_MLP_input_dim) * init_weight;
     dMLPWeightMatrix = MatrixXf::Zero(n_output_dim, n_MLP_input_dim);
-
+    
     MLPBiasVector = VectorXf::Zero(n_output_dim);
     dMLPBiasVector = VectorXf::Zero(n_output_dim);
-
+    
+    Layer = nullptr;
+    delete Layer;
 }
-
 
 VectorXf ConvolutionalNeuronNetwork::FeedForward(MatrixXf inputImage)
 {
@@ -409,10 +362,10 @@ void ConvolutionalNeuronNetwork::UploadTrainWeight(std::string dst)
      */
     
     std::ofstream fw(dst);
-    fw << m_convs.size() << '\n';
+    fw << n_layers << '\n';
     
     auto lit = m_CNNLayers.begin() + 1;
-    for (int i = 1; i < m_convs.size(); i++)
+    for (int i = 1; i < n_layers; i++)
     {
         if ((*lit)->m_property != 'c')
         {
@@ -420,7 +373,7 @@ void ConvolutionalNeuronNetwork::UploadTrainWeight(std::string dst)
             continue;
         }
         
-        fw << m_convs[i] << '\n';
+        fw << (*lit)->l_conv << '\n';
         for (int j = 0; j < (*lit)->n_units; j++)
         {
             fw << (*lit)->m_conv_weight[j];
@@ -448,10 +401,10 @@ void ConvolutionalNeuronNetwork::UploadTrainBias(std::string dst)
      *
      */
     std::ofstream fw(dst);
-    fw << m_convs.size() << '\n';
+    fw << n_layers << '\n';
     
     auto lit = m_CNNLayers.begin() + 1;
-    for (int i = 1; i < m_convs.size(); i++)
+    for (int i = 1; i < n_layers; i++)
     {
         if ((*lit)->m_property != 'c')
         {
@@ -489,12 +442,12 @@ void ConvolutionalNeuronNetwork::DownloadTrainWeight(std::string src)
     getline(fr, str);
     
     /* Group size */
-    assert(stoi(str) == int(m_convs.size()));
+    assert(stoi(str) == int(n_layers));
     
     
     /* Download the conv matrix with string splitted by space */
     auto lit = m_CNNLayers.begin() + 1;
-    for (int i = 1; i < m_convs.size(); i++)
+    for (int i = 1; i < n_layers; i++)
     {
         if ((*lit)->m_property != 'c')
         {
@@ -563,11 +516,11 @@ void ConvolutionalNeuronNetwork::DownloadTrainBias(std::string src)
     getline(fr, str);
     
     /* Group size */
-    assert(stoi(str) == int(m_convs.size()));
+    assert(stoi(str) == int(n_layers));
     
     /* Download the bias matrix */
     auto lit = m_CNNLayers.begin() + 1;
-    for (int i = 1; i < m_convs.size(); i++)
+    for (int i = 1; i < n_layers; i++)
     {
         if ((*lit)->m_property != 'c')
         {
@@ -683,6 +636,8 @@ VectorXf ConvolutionalNeuronNetwork::get_i_label(int index, std::string set)
     }
 }
 
+
+
 void ConvolutionalNeuronNetwork::LoadTrainImage()
 {
     /*
@@ -748,6 +703,27 @@ void ConvolutionalNeuronNetwork::LoadTestLabel()
 }
 
 
+void ConvolutionalNeuronNetwork::LoadTrainImage(Matrices train_image)
+{
+    n_train_samples = (int)train_image.size();
+    m_train_Images = train_image;
+}
+
+void ConvolutionalNeuronNetwork::LoadTestImage(Matrices test_image)
+{
+    n_test_samples = (int)test_image.size();
+    m_test_Images = test_image;
+}
+
+void ConvolutionalNeuronNetwork::LoadTrainLabel(MatrixXf train_label)
+{
+    m_train_label = train_label;
+}
+
+void ConvolutionalNeuronNetwork::LoadTestLabel(MatrixXf test_label)
+{
+    m_test_label = test_label;
+}
 
 /***************************************************************************/
 

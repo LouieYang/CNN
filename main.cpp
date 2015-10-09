@@ -2,12 +2,8 @@
 
 int main()
 {
-    Matrices m;
-    m.push_back(MatrixXf::Ones(1, 1));
-    m.push_back(MatrixXf::Ones(6, 1));
-    m.push_back(MatrixXf::Identity(6, 6));
-    MatrixXf mm(16, 6);
-    mm << 1, 1, 1, 0, 0, 0,
+    MatrixXf m(16, 6);
+    m << 1, 1, 1, 0, 0, 0,
         0, 1, 1, 1, 0, 0,
         0, 0, 1, 1, 1, 0,
         0, 0, 0, 1, 1, 1,
@@ -23,10 +19,15 @@ int main()
         0, 1, 1, 0, 1, 1,
         1, 0, 1, 1, 0, 1,
     1, 1, 1, 1, 1, 1;
-    m.push_back(mm);
-    m.push_back(MatrixXf::Identity(16, 16));
-    std::string s("ccpcp");
-    ConvolutionalNeuronNetwork CNN(s, 28, 28, 10, 50000, 10000, m);
+    LayerAttributes attributes;
+    attributes.push_back({1, 1, 'c', MatrixXf::Ones(1, 1)});
+    attributes.push_back({5, 6, 'c', MatrixXf::Ones(6, 1)});
+    attributes.push_back({1, 6, 'p', MatrixXf::Identity(6, 6)});
+    attributes.push_back({5, 16, 'c', m});
+    attributes.push_back({1, 16, 'p', MatrixXf::Identity(16, 16)});
+
+    
+    ConvolutionalNeuronNetwork CNN(attributes, 28, 28, 10, 50000, 10000);
     std::cout << "Contructed" << std::endl;
     
 
