@@ -3,11 +3,13 @@
 
 #include <vector>
 #include <iostream>
+#include <memory>
+#include <random>
 
 #include "LoadMatrix.h"
 
 #define DEFAULT_POOL 2
-#define DEFAULT_LEARNING_RATE 1
+#define DEFAULT_LEARNING_RATE 0.1
 #define DSIGMOID(x) x * (1 - x)
 
 struct LayerAttribute
@@ -21,7 +23,7 @@ struct LayerAttribute
 using LayerAttributes = std::vector<struct LayerAttribute>;
 
 class CNNLayer;
-using VectorLayers = std::vector<CNNLayer*>;
+using VectorLayers = std::vector<std::shared_ptr<CNNLayer>>;
 using Matrices = std::vector<MatrixXf>;
 
 class ConvolutionalNeuronNetwork
@@ -125,6 +127,7 @@ MatrixXf Rot180(MatrixXf input);
 void DePool(MatrixXf& input, MatrixXf output, int pool_coeff);
 void matrix_sigmoid(MatrixXf& matrix);
 double sigmoid(double input);
+std::vector<int> get_shuffled_index(int n);
 
 int max_label_index(VectorXf label);
 #endif /* defined(__CNN__CNN__) */

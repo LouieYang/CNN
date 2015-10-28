@@ -48,11 +48,11 @@ n_layers(int(attributes.size())), n_image_rows(image_row), n_image_cols(image_co
     /* The first layer must be the input image(i.e. needn't set conv size) */
     CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, attributes[0].size_conv, attributes[0].neurons, attributes[0].LayerType, attributes[0].linkage);
     
-    m_CNNLayers.push_back(Layer);
+    m_CNNLayers.push_back(std::shared_ptr<CNNLayer>(Layer));
     for (int i = 1; i < n_layers; i++)
     {
         Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), attributes[i].size_conv, attributes[i].neurons, attributes[i].LayerType, attributes[i].linkage, Layer);
-        m_CNNLayers.push_back(Layer);
+        m_CNNLayers.push_back(std::shared_ptr<CNNLayer>(Layer));
     }
     
     /* The final layer of CNN has to be a completely linked perceptron */
@@ -84,11 +84,11 @@ ConvolutionalNeuronNetwork::ConvolutionalNeuronNetwork(LayerAttributes attribute
     /* The first layer must be the input image(i.e. needn't set conv size) */
     CNNLayer* Layer = new CNNLayer(n_image_rows, n_image_cols, attributes[0].size_conv, attributes[0].neurons, attributes[0].LayerType, attributes[0].linkage);
     
-    m_CNNLayers.push_back(Layer);
+    m_CNNLayers.push_back(std::shared_ptr<CNNLayer>(Layer));
     for (int i = 1; i < n_layers; i++)
     {
         Layer = new CNNLayer(Layer->m_Neuron_Value[0].rows(), Layer->m_Neuron_Value[0].cols(), attributes[i].size_conv, attributes[i].neurons, attributes[i].LayerType, attributes[i].linkage, Layer);
-        m_CNNLayers.push_back(Layer);
+        m_CNNLayers.push_back(std::shared_ptr<CNNLayer>(Layer));
     }
     
     /* The final layer of CNN has to be a completely linked perceptron */
@@ -292,14 +292,16 @@ void ConvolutionalNeuronNetwork::Train(int epoches, int batch_size, double etaLe
     {
         int iter = n_train_samples / batch_size;
         int left_batch = n_train_samples % batch_size;
-     
+        
+        std::vector<int> train_image_index = get_shuffled_index(int(m_train_Images.size()));
+        
         std::cout << ii << "/" << epoches << " Epoch"<< std::endl;
         
         for (int i = 0; i < iter; i++)
         {
             for (int j = 0; j < batch_size; j++)
             {
-                BackPropagate(FeedForward(m_train_Images[i * batch_size + j]), m_train_label.row(i * batch_size + j));
+                BackPropagate(FeedForward(m_train_Images[train_image_index[i * batch_size + j]]), m_train_label.row(train_image_index[i * batch_size + j]));
             }
             ApplyGradient(batch_size, etaLearningRate);
             
@@ -309,7 +311,7 @@ void ConvolutionalNeuronNetwork::Train(int epoches, int batch_size, double etaLe
         
         for (int i = 0; i < left_batch; i++)
         {
-            BackPropagate(FeedForward(m_train_Images[epoches * batch_size + i]), m_train_label.row(iter * batch_size + i));
+            BackPropagate(FeedForward(m_train_Images[train_image_index[epoches * batch_size + i]]), m_train_label.row(train_image_index[iter * batch_size + i]));
         }
         ApplyGradient(left_batch, etaLearningRate);
         CleanGradient();
@@ -1017,4 +1019,17 @@ int max_label_index(VectorXf label)
         }
     }
     return index_max;
+}
+
+std::vector<int> get_shuffled_index(int n)
+{
+    std::vector<int> v(n, 0);
+    int k = 0;
+    std::for_each(v.begin(), v.end(), [&k](int &vvalue){vvalue += (k++);});
+    
+    static std::random_device rd;
+    std::mt19937 g(rd());
+    
+    std::shuffle(v.begin(), v.end(), g);
+    return v;
 }
